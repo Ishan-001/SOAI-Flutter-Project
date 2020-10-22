@@ -1,5 +1,10 @@
+
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 void main(){
 
@@ -20,6 +25,32 @@ class Home extends StatefulWidget{
 }
 
 class _HomeState extends State<Home>{
+
+
+  PickedFile _image;
+  final picker=ImagePicker();
+
+  Future getImage() async{
+    final pickedFile=await picker.getImage(source: ImageSource.camera);
+
+    setState(() {
+      if(pickedFile!=null){
+        _image=PickedFile(pickedFile.path);
+      }
+      else{
+        Fluttertoast.showToast(
+            msg: "No image selected",
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.CENTER,
+            timeInSecForIosWeb: 1,
+            backgroundColor: Colors.grey[800],
+            textColor: Colors.white,
+            fontSize: 16.0
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -31,7 +62,7 @@ class _HomeState extends State<Home>{
         child: Column(
           children: <Widget>[
             getImageAsset(),
-            getCapturedImage(),
+            _image==null?Container(height: 400.0,width: 400.0):Image.file(File(_image.path),height: 400.0,width: 1500.0),
             getButtons()
           ],
         ),
@@ -46,9 +77,8 @@ class _HomeState extends State<Home>{
     return Container(child: image);
   }
 
-  Widget getCapturedImage(){
-    return Container(height: 400.0);
-  }
+  // Widget getCapturedImage(){
+  // }
 
   Widget getButtons(){
     return Row(children: <Widget>[
@@ -57,9 +87,7 @@ class _HomeState extends State<Home>{
           child: Text('Capture'),
           textColor: Colors.white,
           color: Color(0xFF43464B),
-          onPressed: (){
-            //define camera image capture method here
-          }
+          onPressed: getImage,
         ),
       ),
       Expanded(
