@@ -1,106 +1,197 @@
 
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:tflite/tflite.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:image/image.dart' as img;
 
-void main(){
-
-  runApp(MaterialApp(
-    title: 'Ingredient Detection App',
-    theme: ThemeData(
-      primaryColor: Color(0xFF43464B)
-    ),
-    home: Home(),
-  ));
+void main() {
+  runApp(MyApp());
 }
 
-class Home extends StatefulWidget{
+const String ssd = "SSD MobileNet";
+const String yolo = "Tiny YOLOv2";
+
+class MyApp extends StatelessWidget {
   @override
-  State<StatefulWidget> createState() {
-    return _HomeState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home:TfliteHome(),
+    );
+
+
   }
 }
 
-class _HomeState extends State<Home>{
+class TfliteHome extends StatefulWidget {
+  @override
+  _TfliteHomeState createState() => _TfliteHomeState();
 
+}
 
-  PickedFile _image;
-  final picker=ImagePicker();
+class _TfliteHomeState extends State<TfliteHome> {
+  String _model = ssd;
+  File _image;
 
-  Future getImage() async{
-    final pickedFile=await picker.getImage(source: ImageSource.camera);
+  double _imageWidth;
+  double _imageHeight;
+  bool _busy = false;
+
+  List _recognitions;
+
+  @override
+  void initState() {
+    super.initState();
+    _busy = true;
+
+    loadModel().then((val) {
+      setState(() {
+        _busy = false;
+      });
+    });
+  }
+
+  loadModel() async {
+    Tflite.close();
+    try {
+      String res;
+
+        res = await Tflite.loadModel(
+          model: "assets/ssd_mobilenet.tflite",
+          labels: "assets/labels_mobilenet_quant_v1_224.txt",
+        );
+
+      print(res);
+    } on PlatformException {
+      print("Failed to load the model");
+    }
+  }
+
+  selectFromImagePicker() async {
+    var image = await ImagePicker.pickImage(source: ImageSource.camera);
+    if (image == null) return;
+    setState(() {
+      _busy = true;
+    });
+    predictImage(image);
+  }
+
+  predictImage(File image) async {
+    if (image == null) return;
+     else {
+      await ssdMobileNet(image);
+    }
+
+    FileImage(image)
+        .resolve(ImageConfiguration())
+        .addListener((ImageStreamListener((ImageInfo info, bool _) {
+      setState(() {
+        _imageWidth = info.image.width.toDouble();
+        _imageHeight = info.image.height.toDouble();
+      });
+    })));
 
     setState(() {
-      if(pickedFile!=null){
-        _image=PickedFile(pickedFile.path);
-      }
-      else{
-        Fluttertoast.showToast(
-            msg: "No image selected",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.CENTER,
-            timeInSecForIosWeb: 1,
-            backgroundColor: Colors.grey[800],
-            textColor: Colors.white,
-            fontSize: 16.0
-        );
-      }
+      _image = image;
+      _busy = false;
     });
+  }
+
+
+
+  ssdMobileNet(File image) async {
+    var recognitions = await Tflite.detectObjectOnImage(
+        path: image.path, numResultsPerClass: 1);
+
+    setState(() {
+      _recognitions = recognitions;
+    });
+  }
+
+  List<Widget> renderBoxes(Size screen) {
+    if (_recognitions == null) return [];
+    if (_imageWidth == null || _imageHeight == null) return [];
+
+    double factorX = screen.width;
+    double factorY = _imageHeight / _imageHeight * screen.width;
+
+    Color blue = Colors.red;
+
+    return _recognitions.map((re) {
+      return Positioned(
+        left: re["rect"]["x"] * factorX,
+        top: re["rect"]["y"] * factorY,
+        width: re["rect"]["w"] * factorX,
+        height: re["rect"]["h"] * factorY,
+        child: Container(
+          decoration: BoxDecoration(
+              border: Border.all(
+                color: blue,
+                width: 3,
+              )),
+
+          child: Text(
+            "${re["detectedClass"]} ${(re["confidenceInClass"] * 100).toStringAsFixed(0)}%",
+            style: TextStyle(
+              background: Paint()..color = blue,
+              color: Colors.white,
+              fontSize: 15,
+            ),
+          ),
+        ),
+      );
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    Size size = MediaQuery.of(context).size;
+
+    List<Widget> stackChildren = [];
+
+    stackChildren.add(Positioned(
+      top: 0.0,
+      left: 0.0,
+      width: size.width,
+      child: _image == null ? Image.asset('images/home_image.png'): Image.file(_image),
+    ));
+
+    stackChildren.addAll(renderBoxes(size));
+
+    if (_busy) {
+      stackChildren.add(Center(
+        child: CircularProgressIndicator(),
+      ));
+    }
+
     return Scaffold(
+      backgroundColor: Colors.grey[800],
       appBar: AppBar(
-        title: Text('Ingredient Detection App')
+        title: Text('Ingredient Detection App'),
+        backgroundColor: Colors.grey[800],
       ),
-      body: Container(
-        color: Colors.grey,
-        child: Column(
-          children: <Widget>[
-            getImageAsset(),
-            _image==null?Container(height: 400.0,width: 400.0):Image.file(File(_image.path),height: 400.0,width: 1500.0),
-            getButtons()
-          ],
-        ),
+      floatingActionButton: FloatingActionButton(
+        child: Icon(Icons.image),
+        backgroundColor: Colors.grey[800],
+        tooltip: "Pick Image from Camera",
+        onPressed: selectFromImagePicker,
+
       ),
+      body: Stack(
+
+        children: stackChildren,
+
+
+
+
+
+
+
+      ),
+
     );
   }
-
-  Widget getImageAsset(){
-    AssetImage assetImage=AssetImage('images/home_image.png');
-    Image image=Image(image: assetImage);
-
-    return Container(child: image);
-  }
-
-  // Widget getCapturedImage(){
-  // }
-
-  Widget getButtons(){
-    return Row(children: <Widget>[
-      Expanded(
-        child: RaisedButton(
-          child: Text('Capture'),
-          textColor: Colors.white,
-          color: Color(0xFF43464B),
-          onPressed: getImage,
-        ),
-      ),
-      Expanded(
-        child: RaisedButton(
-          child: Text('Detect'),
-          textColor: Colors.white,
-          color: Color(0xFF43464B),
-          onPressed: (){
-            //define fetch results method here
-          },
-        ),
-      )
-    ]);
-  }
-
 }
